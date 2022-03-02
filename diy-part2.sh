@@ -13,5 +13,5 @@
 # Modify default IP
 #sed -i 's/192.168.1.1/192.168.50.5/g' package/base-files/files/bin/config_generate
 sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generate
-
-echo "DISTRIB_REVISION='R22.2.2 by luozan'" >> /etc/openwrt_release
+sed -i 's/R22.2.2/R22.2.2 by luozan/g' package/lean/default-settings/files
+sed -i 's/OpenWrt/lz's OpenWrt/g' package/base-files/files/bin
