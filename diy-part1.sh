@@ -18,4 +18,5 @@
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 #echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
 #echo 'src-git small https://github.com/kenzok8/small' >>feeds.conf.default
-git clone https://github.com/vernesong/OpenClash.git
+#git clone https://github.com/vernesong/OpenClash.git
+echo 'src-git vernesong https://github.com/vernesong/OpenClash' >>feeds.conf.defaulthttps://github.com/vernesong/OpenClash
