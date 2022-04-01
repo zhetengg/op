@@ -15,3 +15,4 @@
 sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generate
 sed -i 's/R22.3.13/R22.3.13 by luozan/g' package/lean/default-settings/files/zzz-default-settings
 sed -i 's/OpenWrt/lzWrt/g' package/base-files/files/bin/config_generate
+sed -i 's/h=${g}' - '${a}${b}${c}${d}${e}${f}/h=${a}${b}${c}${d}${e}${f}/g' package\lean\autocore\files\x86\autocore
