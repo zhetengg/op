@@ -22,4 +22,5 @@
 #git clone https://github.com/vi-si/luci-app-openclash.git package/luci-app-openclash
 #echo 'src-git vernesong https://github.com/vernesong/OpenClash' >>feeds.conf.default
 #echo 'src-git immortalwrt https://github.com/immortalwrt/homeproxy' >>feeds.conf.default
-sed -i '$a src-git smpackage https://github.com/kenzok8/small-package' feeds.conf.default
+sed -i '1i src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
+sed -i '2i src-git small https://github.com/kenzok8/small' feeds.conf.default
