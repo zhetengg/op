@@ -18,6 +18,7 @@
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
 echo 'src-git small https://github.com/kenzok8/small' feeds.conf.default
+git clone --depth=1 https://github.com/immortalwrt/homeproxy.git package/homeproxy
 #echo 'src-git small https://github.com/kenzok8/small-package' >>feeds.conf.default
 #echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
 #git clone https://github.com/kenzok8/small.git package/openwrt-small
