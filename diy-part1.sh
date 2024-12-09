@@ -18,8 +18,8 @@
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 echo 'src-git small https://github.com/kenzok8/small-package' >>feeds.conf.default
 echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
-git clone https://github.com/kenzok8/openwrt-packages.git
-git clone https://github.com/kenzok8/small-package.git
+git clone https://github.com/kenzok8/openwrt-packages.git /package/openwrt-package
+git clone https://github.com/kenzok8/small.git package/openwrt-small
 #git clone https://github.com/vi-si/luci-app-openclash.git package/luci-app-openclash
 #echo 'src-git vernesong https://github.com/vernesong/OpenClash' >>feeds.conf.default
 #echo 'src-git immortalwrt https://github.com/immortalwrt/homeproxy' >>feeds.conf.default
