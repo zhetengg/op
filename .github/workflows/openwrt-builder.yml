@@ -1,4 +1,4 @@
-name: OpenWrt-Docker-OC-AGH-Ultimate
+name: OpenWrt-Ultimate-Fixed
 
 on:
   workflow_dispatch:
@@ -36,7 +36,6 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 再次暴力清理，确保万无一失
         sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev rename
@@ -50,8 +49,10 @@ jobs:
 
     - name: Load DIY-P1
       run: |
-        chmod +x $DIY_P1_SH
+        # 使用绝对路径定位脚本并赋予权限
+        [ -e $DIY_P1_SH ] && chmod +x $DIY_P1_SH
         cd openwrt
+        # 执行根目录下的脚本
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update & Install Feeds
@@ -62,11 +63,13 @@ jobs:
 
     - name: Load Config & DIY-P2
       run: |
+        # 拷贝 config 文件
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
+        # 执行 DIY-P2 脚本
+        [ -e $DIY_P2_SH ] && chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 强制剔除极致空间占用的非必要项
+        # 强制剔除极致空间占用的非必要项，确保编译不爆磁盘
         sed -i '/mosdns/d' .config
         sed -i '/sing-box/d' .config
         sed -i '/xray/d' .config
@@ -83,7 +86,7 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        # 将 Go 缓存重定向到扩容后的空间
+        # 关键：将 Go 缓存重定向到扩容后的空间
         export GOCACHE="$GITHUB_WORKSPACE/openwrt/.gocache"
         export GOPATH="$GITHUB_WORKSPACE/openwrt/.gopath"
         echo -e "$(nproc) thread compile"
