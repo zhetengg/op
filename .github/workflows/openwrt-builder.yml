@@ -1,4 +1,4 @@
-name: OpenWrt-OC-AGH-Builder
+name: OpenWrt-Docker-OC-AGH-Ultimate
 
 on:
   workflow_dispatch:
@@ -21,25 +21,34 @@ jobs:
       with:
         fetch-depth: 1
 
-    - name: Extreme Disk Cleanup
-      run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
-        sudo docker image prune -a -f
-        sudo apt-get clean
-        df -h
+    - name: Maximize Build Space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 2048
+        swap-size-mb: 1
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
 
-    - name: Init Environment
+    - name: Initialization Environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
+        # 再次暴力清理，确保万无一失
+        sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev rename
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
+        df -h
 
     - name: Clone Source
       run: git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: Load Diy-Part1
+    - name: Load DIY-P1
       run: |
         chmod +x $DIY_P1_SH
         cd openwrt
@@ -51,13 +60,13 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Load Config & Diy-Part2
+    - name: Load Config & DIY-P2
       run: |
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 自动精简掉除了 OC 和 AGH 以外的代理插件，防止冲突和撑爆磁盘
+        # 强制剔除极致空间占用的非必要项
         sed -i '/mosdns/d' .config
         sed -i '/sing-box/d' .config
         sed -i '/xray/d' .config
@@ -74,31 +83,17 @@ jobs:
       id: compile
       run: |
         cd openwrt
+        # 将 Go 缓存重定向到扩容后的空间
         export GOCACHE="$GITHUB_WORKSPACE/openwrt/.gocache"
         export GOPATH="$GITHUB_WORKSPACE/openwrt/.gopath"
+        echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Organize Files
-      if: steps.compile.outputs.status == 'success'
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
-      if: env.FIRMWARE_PATH != ''
+      if: steps.compile.outputs.status == 'success'
       with:
-        name: OpenWrt_OC_AGH_${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE_PATH }}/*
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      if: env.FIRMWARE_PATH != ''
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: Build_${{ env.FILE_DATE }}
-        files: ${{ env.FIRMWARE_PATH }}/*
+        name: OpenWrt_Fixed_${{ env.FILE_DATE }}
+        path: openwrt/bin/targets/*/*/*
