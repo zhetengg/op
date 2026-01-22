@@ -5,3 +5,7 @@ sed -i 's/192.168.1.1/192.168.5.1/g' package/base-files/files/bin/config_generat
 # 2. 确保配置里选中了核心插件（防止手动选漏）
 echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 echo "CONFIG_PACKAGE_luci-app-adguardhome=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-dockerman=y" >> .config
+# 选中 Docker 核心组件
+echo "CONFIG_PACKAGE_docker=y" >> .config
+echo "CONFIG_PACKAGE_dockerd=y" >> .config
