@@ -1,4 +1,4 @@
-name: OpenWrt Builder
+name: OpenWrt Build
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
+  CONFIG_FILE: .config
   TZ: Asia/Shanghai
 
 jobs:
@@ -13,24 +14,24 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-    - name: Init environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-        sudo docker image prune -a -f
-        sudo apt-get clean
-        sudo apt-get autoremove -y
-        sudo timedatectl set-timezone "$TZ"
-        df -h
+    - name: Set timezone
+      run: sudo timedatectl set-timezone ${{ env.TZ }}
 
-    - name: Clone OpenWrt
+    - name: Prepare workdir
       run: |
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        cp .config openwrt/.config
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+
+    - name: Clone OpenWrt source
+      working-directory: /workdir
+      run: git clone -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
+
+    - name: Load config
+      run: |
+        cp ${{ env.CONFIG_FILE }} openwrt/.config
 
     - name: Update & install feeds
       run: |
@@ -38,28 +39,14 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Download packages
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j8
-        find dl -size -1024c -delete
-
     - name: Compile firmware
       run: |
         cd openwrt
-        make -j$(nproc) || make -j1 V=s
+        make defconfig
+        make -j$(nproc) V=s
 
-    - name: Prepare artifacts
-      run: |
-        mkdir -p artifact
-        cp openwrt/bin/targets/*/*/*.img.gz artifact/ || true
-        cp openwrt/bin/targets/*/*/*.img artifact/ || true
-
-    - name: Upload Release
-      uses: softprops/action-gh-release@v2
+    - name: Upload firmware
+      uses: actions/upload-artifact@v3
       with:
-        tag_name: OpenWrt-x86_64
-        files: artifact/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        name: openwrt-x86_64
+        path: openwrt/bin/targets/x86/64/
