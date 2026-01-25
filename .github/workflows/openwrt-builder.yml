@@ -6,7 +6,7 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  CONFIG_FILE: .config
+  CONFIG_FILE: .config  # 请确保 .config 在仓库根目录
   TZ: Asia/Shanghai
 
 jobs:
@@ -29,9 +29,17 @@ jobs:
       working-directory: /workdir
       run: git clone -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
 
-    - name: Load config
+    - name: Confirm .config exists
       run: |
-        cp ${{ env.CONFIG_FILE }} openwrt/.config
+        if [ ! -f "${{ env.CONFIG_FILE }}" ]; then
+          echo ".config file not found in repository root!"
+          exit 1
+        fi
+        echo ".config file found. First 10 lines:"
+        head -n 10 ${{ env.CONFIG_FILE }}
+
+    - name: Load config
+      run: cp ${{ env.CONFIG_FILE }} openwrt/.config
 
     - name: Update & install feeds
       run: |
