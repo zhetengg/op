@@ -11,6 +11,16 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache
+        sudo docker image prune -af
+        sudo apt clean
+        df -h
+
     - name: Install build dependencies
       run: |
         sudo apt update
@@ -18,8 +28,14 @@ jobs:
           gawk gcc-multilib gettext git libncurses-dev libssl-dev \
           python3-setuptools rsync unzip zlib1g-dev file wget
 
+    - name: Prepare build directory
+      run: |
+        sudo mkdir -p /mnt/openwrt
+        sudo chown runner:runner /mnt/openwrt
+
     - name: Clone OpenWrt
       run: |
+        cd /mnt/openwrt
         git clone https://github.com/openwrt/openwrt.git
         cd openwrt
         ./scripts/feeds update -a
@@ -28,37 +44,24 @@ jobs:
     - name: Confirm .config exists
       run: |
         if [ ! -f .config ]; then
-          echo "❌ .config file not found!"
+          echo "❌ .config not found in repo root"
           exit 1
-        else
-          echo "✅ .config file exists:"
-          ls -lh .config
         fi
-
-    - name: Copy config into OpenWrt folder
-      run: |
-        cp .config openwrt/.config
-        echo "✅ Copied .config into openwrt folder"
+        ls -lh .config
 
     - name: Load config
       run: |
-        cd openwrt
+        cp .config /mnt/openwrt/openwrt/.config
+        cd /mnt/openwrt/openwrt
         make defconfig
-        echo "✅ defconfig loaded"
 
-    - name: Clean tmp & dl (reduce disk usage)
+    - name: Build firmware (safe mode)
       run: |
-        cd openwrt
-        rm -rf tmp/*
-        rm -rf dl/*
-
-    - name: Build firmware (single-thread for stability)
-      run: |
-        cd openwrt
-        make -j1 V=s
+        cd /mnt/openwrt/openwrt
+        make -j1
 
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
         name: openwrt-x86_64
-        path: openwrt/bin/targets/x86/64/*.img.gz
+        path: /mnt/openwrt/openwrt/bin/targets/x86/64/*.img.gz
