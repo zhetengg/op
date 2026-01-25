@@ -1,4 +1,4 @@
-name: OpenWrt Builder (Actions Stable)
+name: OpenWrt Builder
 
 on:
   workflow_dispatch:
@@ -6,10 +6,6 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
 
 jobs:
@@ -17,106 +13,53 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    # ===== 1. 极限清理 =====
-    - name: Free disk space
+    - name: Init environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
-        df -hT /
-        sudo swapoff -a || true
-        sudo rm -f /swapfile
-        sudo rm -rf \
-          /usr/share/dotnet \
-          /usr/local/lib/android \
-          /opt/ghc \
-          /usr/lib/jvm \
-          /opt/hostedtoolcache \
-          /var/lib/docker
-        sudo docker image prune -af || true
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
+        sudo docker image prune -a -f
         sudo apt-get clean
         sudo apt-get autoremove -y
         sudo timedatectl set-timezone "$TZ"
-        df -hT /
+        df -h
 
-    # ===== 2. workdir =====
-    - name: Prepare workdir
-      run: |
-        sudo mkdir -p /workdir
-        sudo chown -R $USER:$USER /workdir
-
-    # ===== 3. clone =====
     - name: Clone OpenWrt
-      working-directory: /workdir
       run: |
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        cp .config openwrt/.config
 
-    # ===== 4. DIY P1 =====
-    - name: DIY Part 1 (feeds)
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    # ===== 5. feeds =====
-    - name: Update feeds
+    - name: Update & install feeds
       run: |
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # ===== 6. DIY P2 =====
-    - name: DIY Part 2 (config)
-      run: |
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-        make defconfig
-
-    # ===== 7. download =====
     - name: Download packages
       run: |
         cd openwrt
+        make defconfig
         make download -j8
         find dl -size -1024c -delete
-        df -hT .
 
-    # ===== 8. compile =====
-    - name: Compile
-      id: compile
+    - name: Compile firmware
       run: |
         cd openwrt
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        make -j$(nproc) || make -j1 V=s
 
-    # ===== 9. 清理 host =====
-    - name: Clean host build
-      if: steps.compile.outcome == 'success'
+    - name: Prepare artifacts
       run: |
-        cd openwrt
-        rm -rf build_dir/host/*
-        rm -rf build_dir/toolchain/*
-        rm -rf staging_dir/host*
-        df -hT .
+        mkdir -p artifact
+        cp openwrt/bin/targets/*/*/*.img.gz artifact/ || true
+        cp openwrt/bin/targets/*/*/*.img artifact/ || true
 
-    # ===== 10. firmware =====
-    - name: Collect firmware
-      if: steps.compile.outcome == 'success'
-      run: |
-        cd openwrt
-        mkdir -p firmware
-        find bin/targets -type f \( -name "*.img.gz" -o -name "*.bin" \) \
-          -exec cp -v {} firmware/ \;
-        echo "DATE=$(date +%Y-%m-%d)" >> $GITHUB_ENV
-
-    # ===== 11. release =====
-    - name: Release
-      if: steps.compile.outcome == 'success'
+    - name: Upload Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: OpenWrt-${{ env.DATE }}
-        name: OpenWrt Actions Build ${{ env.DATE }}
-        files: openwrt/firmware/*
+        tag_name: OpenWrt-x86_64
+        files: artifact/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
