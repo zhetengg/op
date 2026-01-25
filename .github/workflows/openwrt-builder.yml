@@ -39,17 +39,19 @@ jobs:
         head -n 10 ${{ env.CONFIG_FILE }}
 
     - name: Load config
-      run: cp ${{ env.CONFIG_FILE }} openwrt/.config
+      run: |
+        cd /workdir/openwrt
+        cp ${{ env.CONFIG_FILE }} .config
 
     - name: Update & install feeds
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
     - name: Compile firmware
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         make defconfig
         make -j$(nproc) V=s
 
@@ -57,4 +59,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: openwrt-x86_64
-        path: openwrt/bin/targets/x86/64/
+        path: /workdir/openwrt/bin/targets/x86/64/
