@@ -6,7 +6,7 @@ on:
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-  CONFIG_FILE: .config  # 请确保 .config 在仓库根目录
+  CONFIG_FILE: .config  # 确保 .config 在仓库根目录
   TZ: Asia/Shanghai
 
 jobs:
@@ -14,47 +14,55 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+    # 1️⃣ Checkout 仓库
     - name: Checkout repository
       uses: actions/checkout@v3
 
+    # 2️⃣ 设置时区
     - name: Set timezone
       run: sudo timedatectl set-timezone ${{ env.TZ }}
 
+    # 3️⃣ 准备工作目录
     - name: Prepare workdir
       run: |
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
+    # 4️⃣ Clone OpenWrt 源码
     - name: Clone OpenWrt source
       working-directory: /workdir
       run: git clone -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
 
+    # 5️⃣ 检查 .config 是否存在
     - name: Confirm .config exists
       run: |
-        if [ ! -f "${{ env.CONFIG_FILE }}" ]; then
+        if [ ! -f "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" ]; then
           echo ".config file not found in repository root!"
           exit 1
         fi
         echo ".config file found. First 10 lines:"
-        head -n 10 ${{ env.CONFIG_FILE }}
+        head -n 10 "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}"
 
+    # 6️⃣ 拷贝 .config 到源码目录
     - name: Load config
       run: |
-        cd /workdir/openwrt
-        cp ${{ env.CONFIG_FILE }} .config
+        cp "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" /workdir/openwrt/.config
 
+    # 7️⃣ 更新并安装 feeds
     - name: Update & install feeds
       run: |
         cd /workdir/openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    # 8️⃣ 编译固件
     - name: Compile firmware
       run: |
         cd /workdir/openwrt
         make defconfig
         make -j$(nproc) V=s
 
+    # 9️⃣ 上传固件 artifact
     - name: Upload firmware artifacts
       uses: actions/upload-artifact@v4
       with:
