@@ -3,65 +3,107 @@ name: OpenWrt Build
 on:
   workflow_dispatch:
 
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  CONFIG_FILE: .config          # 仓库里的最终 .config 文件
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 360   # 最大 6 小时，防止编译超时
 
     steps:
+    # ------------------------------
+    # 1️⃣ Checkout
+    # ------------------------------
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
-    - name: Free disk space
-      run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /opt/hostedtoolcache
-        sudo docker image prune -af
-        sudo apt clean
-        df -h
-
+    # ------------------------------
+    # 2️⃣ 安装编译依赖
+    # ------------------------------
     - name: Install build dependencies
       run: |
-        sudo apt update
-        sudo apt install -y build-essential clang flex bison g++ \
-          gawk gcc-multilib gettext git libncurses-dev libssl-dev \
-          python3-setuptools rsync unzip zlib1g-dev file wget
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev xsltproc \
+                                unzip file python3 python3-distutils gzip bc wget bzip2 patch \
+                                perl perl-modules libc6-dev libelf-dev ccache time
 
-    - name: Prepare build directory
+    # ------------------------------
+    # 3️⃣ 准备工作目录
+    # ------------------------------
+    - name: Prepare workdir
       run: |
-        sudo mkdir -p /mnt/openwrt
-        sudo chown runner:runner /mnt/openwrt
+        mkdir -p /workdir
+        cd /workdir
+        rm -rf openwrt
+        git clone -b $REPO_BRANCH $REPO_URL openwrt
 
-    - name: Clone OpenWrt
+    # ------------------------------
+    # 4️⃣ 添加第三方 feeds（OpenClash + kenzok8）
+    # ------------------------------
+    - name: Add third-party feeds
       run: |
-        cd /mnt/openwrt
-        git clone https://github.com/openwrt/openwrt.git
-        cd openwrt
+        cd /workdir/openwrt
+        echo "src-git openclash https://github.com/vernesong/OpenClash.git" >> feeds.conf.default
+        echo "src-git kenzok8 https://github.com/kenzok8/openwrt-packages" >> feeds.conf.default
+
+    # ------------------------------
+    # 5️⃣ 更新并安装 feeds
+    # ------------------------------
+    - name: Update and install feeds
+      run: |
+        cd /workdir/openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Confirm .config exists
+    # ------------------------------
+    # 6️⃣ 放入仓库里的 .config
+    # ------------------------------
+    - name: Copy config
       run: |
-        if [ ! -f .config ]; then
-          echo "❌ .config not found in repo root"
+        cd /workdir/openwrt
+        if [ -f $GITHUB_WORKSPACE/$CONFIG_FILE ]; then
+          cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        else
+          echo "Error: .config not found in repo"
           exit 1
         fi
-        ls -lh .config
 
-    - name: Load config
+    # ------------------------------
+    # 7️⃣ 生成完整配置
+    # ------------------------------
+    - name: Defconfig
       run: |
-        cp .config /mnt/openwrt/openwrt/.config
-        cd /mnt/openwrt/openwrt
+        cd /workdir/openwrt
         make defconfig
 
-    - name: Build firmware (safe mode)
+    # ------------------------------
+    # 8️⃣ 清理 tmp / dl，避免空间不足
+    # ------------------------------
+    - name: Clean download/tmp dirs
       run: |
-        cd /mnt/openwrt/openwrt
-        make -j1
+        cd /workdir/openwrt
+        rm -rf tmp/* dl/*
 
-    - name: Upload firmware
-      uses: actions/upload-artifact@v4
+    # ------------------------------
+    # 9️⃣ 编译固件（单线程，稳定）
+    # ------------------------------
+    - name: Compile firmware
+      run: |
+        cd /workdir/openwrt
+        make -j1 V=s
+
+    # ------------------------------
+    # 🔟 上传 release
+    # ------------------------------
+    - name: Upload firmware to release
+      if: ${{ env.UPLOAD_RELEASE == 'true' }}
+      uses: softprops/action-gh-release@v1
       with:
-        name: openwrt-x86_64
-        path: /mnt/openwrt/openwrt/bin/targets/x86/64/*.img.gz
+        files: /workdir/openwrt/bin/targets/x86/64/*.img.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
