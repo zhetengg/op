@@ -53,6 +53,12 @@ jobs:
         working-directory: openwrt
         run: make -j$(nproc) || make -j1 V=s
 
+      # DIY Part2 - Docker SSD 优化
+      - name: DIY Part2
+        working-directory: openwrt
+        run: bash ../diy-part2.sh
+
+
       # 9. 上传固件
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
