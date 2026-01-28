@@ -8,3 +8,7 @@ git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-open
 
 # 修 util-linux GCC13 编译错误
 sed -i 's/-Werror//g' package/utils/util-linux/Makefile
+
+# 全局去 Werror（兜底）
+sed -i 's/-Werror//g' include/package.mk
+
