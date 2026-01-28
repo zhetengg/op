@@ -9,64 +9,76 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
-      # Checkout
+      # 1️⃣ Checkout 仓库
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Free disk space
+      # 2️⃣ 释放磁盘空间（防止 runner 满）
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
           sudo docker image prune -af || true
           df -h
 
-      # Install dependencies
+      # 3️⃣ 安装依赖
       - name: Prepare Environment
         run: |
           sudo apt update
-          sudo apt install -y \
-            build-essential clang flex g++ gawk gcc-multilib gettext git \
-            libncurses5-dev libssl-dev python3-distutils libselinux1-dev \
+          sudo apt install -y build-essential clang flex g++ gawk gcc-multilib \
+            gettext git libncurses5-dev libssl-dev python3-distutils libselinux1-dev \
             libxml2-dev libcap-dev zlib1g-dev rsync unzip file wget curl python3
 
-      # Clone OpenWrt
+      # 4️⃣ Clone OpenWrt
       - name: Clone OpenWrt Source
         run: git clone --depth=1 -b master https://github.com/coolsnowwolf/lede openwrt
 
-      # Cache feeds
+      # 5️⃣ 缓存 feeds
       - name: Cache OpenWrt Feeds
         uses: actions/cache@v3
         with:
           path: openwrt/feeds
           key: ${{ runner.os }}-feeds-${{ hashFiles('openwrt/feeds.conf.default') }}
 
-      # DIY Part1 - clone OpenClash
+      # 6️⃣ DIY Part1 - 插件 + 修复 GCC13 Werror
       - name: DIY Part1
         working-directory: openwrt
-        run: bash ../diy-part1.sh
+        run: |
+          export GIT_TERMINAL_PROMPT=0
+          # OpenClash
+          git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
 
-      # Load config
+          # GCC13 Werror 修复
+          sed -i 's/-Werror//g' package/utils/util-linux/Makefile || true
+          sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
+          sed -i 's/-Werror//g' include/package.mk || true
+
+      # 7️⃣ 复制配置文件
       - name: Load Config
         working-directory: openwrt
-        run: cp ../config/x86_64.config .config && make defconfig
+        run: |
+          cp ../config/x86_64.config .config
+          make defconfig
 
-      # Download packages
+      # 8️⃣ 下载 packages
       - name: Download Packages
         working-directory: openwrt
         run: make download -j2
 
-      # Compile
+      # 9️⃣ 编译固件
       - name: Compile OpenWrt
         working-directory: openwrt
         run: make -j2 || make -j1 V=s
 
-      # DIY Part2 - Docker SSD 优化
+      # 🔟 DIY Part2 - Docker SSD 持久化目录
       - name: DIY Part2
         working-directory: openwrt
-        run: bash ../diy-part2.sh
+        run: |
+          mkdir -p /mnt/docker
+          echo "Docker 数据目录 /mnt/docker 已创建"
 
-      # Upload firmware
+      # 11️⃣ 上传固件
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
@@ -74,7 +86,7 @@ jobs:
           path: openwrt/bin/targets
           retention-days: 30
 
-      # Optional: cache build_dir
+      # 12️⃣ 缓存 build_dir
       - name: Cache Build Dir
         uses: actions/cache@v3
         with:
