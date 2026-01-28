@@ -1,17 +1,15 @@
 name: OpenWrt x86_64 J4125 (Stable)
-
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ① 极限释放空间（关键）
+    # ① 释放空间（保留你的）
     - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
@@ -19,81 +17,98 @@ jobs:
         sudo docker image prune -af || true
         df -h
 
-    # ② 依赖（最小集）
+    # ② 依赖（加了 python3-setuptools，部分包需要）
     - name: Install deps
       run: |
         sudo apt update
         sudo apt install -y \
           build-essential clang flex gawk gcc-multilib gettext git \
-          libncurses5-dev libssl-dev python3-distutils rsync unzip file wget curl
+          libncurses5-dev libssl-dev python3-distutils python3-setuptools \
+          rsync unzip file wget curl
 
     # ③ 拉源码
     - name: Clone OpenWrt
       run: |
-        git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
+        git0 clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
-    # ④ OpenClash + GCC13 修复（致命点）
+    # ④ 准备第三方插件 + 关键修复
     - name: Prepare source
       working-directory: openwrt
       run: |
+        # 第三方插件（最新稳定版）
         git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
+        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+        git clone --depth=1 https://github.com/rufengsuixing/luci-app-adguardhome package/luci-app-adguardhome
+        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
+        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+        git clone --depth=1 https://github.com/immortalwrt/packages -b OpenWrt net/udpxy  # Lean 自带 udpxy，但 luci 需要这个
 
-        # 全局干掉 Werror（必须）
+        # 全局移除 Werror（防警告变错误）
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
-        sed -i 's/-Werror//g' package/utils/util-linux/Makefile || true
 
-    # ⑤ 直接生成 .config（不依赖仓库）
-    - name: Generate config
+    # ⑤ 更新 feeds + 生成 .config
+    - name: Update feeds & Generate config
       working-directory: openwrt
       run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
         cat > .config << 'EOF'
         CONFIG_TARGET_x86=y
         CONFIG_TARGET_x86_64=y
         CONFIG_TARGET_x86_64_Generic=y
-
+        
+        # 基础
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
-
         CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_luci-app-adguardhome=y
         CONFIG_PACKAGE_adguardhome=y
-
+        
+        # Docker 全家桶（必须这些）
         CONFIG_PACKAGE_docker=y
         CONFIG_PACKAGE_dockerman=y
+        CONFIG_PACKAGE_docker-ce=y
         CONFIG_PACKAGE_containerd=y
         CONFIG_PACKAGE_runc=y
-
+        CONFIG_PACKAGE_luci-lib-docker=y
+        
+        # 关键依赖：解决 pcre2.h
+        CONFIG_PACKAGE_libpcre2=y
+        
+        # 其他你需要的
         CONFIG_PACKAGE_luci-app-samba4=y
         CONFIG_PACKAGE_samba4-server=y
-
+        CONFIG_PACKAGE_luci-app-udpxy=y
         CONFIG_PACKAGE_udpxy=y
-
+        
+        # 常用驱动/工具
         CONFIG_PACKAGE_kmod-fs-ext4=y
         CONFIG_PACKAGE_kmod-fs-vfat=y
-
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
         CONFIG_PACKAGE_vim=y
         EOF
-
+        
         make defconfig
 
-    # ⑥ 下载源码（限制并发，防爆磁盘）
+    # ⑥ 下载（低并发防爆）
     - name: Download packages
       working-directory: openwrt
       run: |
         make download -j2
-        find dl -size -1024c -delete
+        find dl -size -1024c -delete  # 清理无效下载
 
-    # ⑦ 编译：先快，失败自动降级
+    # ⑦ 编译（先双线程，失败降单线程）
     - name: Compile
       working-directory: openwrt
       run: |
         make -j2 || make -j1 V=s
 
-    # ⑧ 只上传固件（不上传整个 bin）
+    # ⑧ 上传固件
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
         name: OpenWrt-x86_64-J4125
-        path: openwrt/bin/targets/x86/64
+        path: openwrt/bin/targets/x86/64/*.img.gz
