@@ -38,6 +38,11 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: Clean conflicting packages
+      working-directory: openwrt
+      run: |
+        rm -rf package/feeds/*/luci-app-store
+
     - name: DIY Part 1
       working-directory: openwrt
       run: |
