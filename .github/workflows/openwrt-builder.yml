@@ -9,7 +9,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ① 释放空间（保留你的）
     - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
@@ -17,7 +16,6 @@ jobs:
         sudo docker image prune -af || true
         df -h
 
-    # ② 依赖（加了 python3-setuptools，部分包需要）
     - name: Install deps
       run: |
         sudo apt update
@@ -26,28 +24,25 @@ jobs:
           libncurses5-dev libssl-dev python3-distutils python3-setuptools \
           rsync unzip file wget curl
 
-    # ③ 拉源码
+    # ③ 拉源码（已修正 git clone）
     - name: Clone OpenWrt
       run: |
-        git0 clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
+        git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
-    # ④ 准备第三方插件 + 关键修复
     - name: Prepare source
       working-directory: openwrt
       run: |
-        # 第三方插件（最新稳定版）
+        # 第三方插件
         git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
         git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
         git clone --depth=1 https://github.com/rufengsuixing/luci-app-adguardhome package/luci-app-adguardhome
         git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
         git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-        git clone --depth=1 https://github.com/immortalwrt/packages -b OpenWrt net/udpxy  # Lean 自带 udpxy，但 luci 需要这个
 
-        # 全局移除 Werror（防警告变错误）
+        # 移除 Werror
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
 
-    # ⑤ 更新 feeds + 生成 .config
     - name: Update feeds & Generate config
       working-directory: openwrt
       run: |
@@ -59,31 +54,26 @@ jobs:
         CONFIG_TARGET_x86_64=y
         CONFIG_TARGET_x86_64_Generic=y
         
-        # 基础
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
         CONFIG_PACKAGE_luci-app-openclash=y
         CONFIG_PACKAGE_luci-app-adguardhome=y
         CONFIG_PACKAGE_adguardhome=y
         
-        # Docker 全家桶（必须这些）
         CONFIG_PACKAGE_docker=y
-        CONFIG_PACKAGE_dockerman=y
         CONFIG_PACKAGE_docker-ce=y
+        CONFIG_PACKAGE_dockerman=y
         CONFIG_PACKAGE_containerd=y
         CONFIG_PACKAGE_runc=y
         CONFIG_PACKAGE_luci-lib-docker=y
         
-        # 关键依赖：解决 pcre2.h
-        CONFIG_PACKAGE_libpcre2=y
+        CONFIG_PACKAGE_libpcre2=y  # 关键：解决 pcre2.h
         
-        # 其他你需要的
         CONFIG_PACKAGE_luci-app-samba4=y
         CONFIG_PACKAGE_samba4-server=y
         CONFIG_PACKAGE_luci-app-udpxy=y
         CONFIG_PACKAGE_udpxy=y
         
-        # 常用驱动/工具
         CONFIG_PACKAGE_kmod-fs-ext4=y
         CONFIG_PACKAGE_kmod-fs-vfat=y
         CONFIG_PACKAGE_curl=y
@@ -93,20 +83,17 @@ jobs:
         
         make defconfig
 
-    # ⑥ 下载（低并发防爆）
     - name: Download packages
       working-directory: openwrt
       run: |
         make download -j2
-        find dl -size -1024c -delete  # 清理无效下载
+        find dl -size -1024c -delete
 
-    # ⑦ 编译（先双线程，失败降单线程）
     - name: Compile
       working-directory: openwrt
       run: |
         make -j2 || make -j1 V=s
 
-    # ⑧ 上传固件
     - name: Upload firmware
       uses: actions/upload-artifact@v4
       with:
