@@ -1,59 +1,129 @@
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-#
-# File: .github/workflows/update-checker.yml
-# Description: Source code update checker
-#
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
+name: OpenWrt x86_64 J4125 (Ultimate Final - Auto Release)
 
-name: Update Checker
-
-env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+permissions:
+  contents: write
 
 on:
-  workflow_dispatch:
-#  schedule:
-#    - cron: 0 */18 * * *
+  workflow_dispatch:        # 手动触发
+  push:
+    tags:
+      - 'v*'                # 只有 v 开头的 tag 才会发 Release
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    - name: Get Commit Hash
-      id: getHash
+    - name: Free disk space
       run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH .
-        echo "commitHash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+        sudo rm -rf /usr/share/swift /usr/share/rust /usr/local/.ghcup /opt/* || true
+        sudo docker image prune -af || true
+        sudo apt clean
+        df -h
 
-    - name: Compare Commit Hash
-      id: cacheHash
-      uses: actions/cache@v3
-      with:
-        path: .commitHash
-        key: commitHash_${{ steps.getHash.outputs.commitHash }}
-
-    - name: Save New Commit Hash
-      if: steps.cacheHash.outputs.cache-hit != 'true'
+    - name: Install build dependencies
       run: |
-        echo ${{ steps.getHash.outputs.commitHash }} | tee .commitHash
+        sudo apt update
+        sudo apt install -y \
+          build-essential clang flex gawk gcc-multilib gettext git \
+          libncurses5-dev libssl-dev python3-distutils python3-setuptools \
+          rsync unzip wget curl
 
-    - name: Trigger build
-      if: steps.cacheHash.outputs.cache-hit != 'true'
-      uses: peter-evans/repository-dispatch@v2
-      with:
-        token: ${{ github.token }}
-        event-type: Source Code Update
+    - name: Clone OpenWrt (Lean LEDE)
+      run: |
+        git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
-    - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2
+    - name: Prepare extra packages
+      working-directory: openwrt
+      run: |
+        git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
+        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
+        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+
+        # 防止 -Werror 导致莫名其妙炸编译
+        sed -i 's/-Werror//g' include/package.mk
+        sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
+
+    - name: Update feeds & Generate config
+      working-directory: openwrt
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+        cat > .config << 'EOF'
+        CONFIG_TARGET_x86=y
+        CONFIG_TARGET_x86_64=y
+        CONFIG_TARGET_x86_64_Generic=y
+
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+
+        CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_openclash=y
+        CONFIG_OPENCLASH_CORE_META=y
+
+        CONFIG_PACKAGE_docker=y
+        CONFIG_PACKAGE_docker-ce=y
+        CONFIG_PACKAGE_containerd=y
+        CONFIG_PACKAGE_runc=y
+        CONFIG_PACKAGE_luci-lib-docker=y
+        CONFIG_PACKAGE_dockerman=y
+
+        CONFIG_PACKAGE_udpxy=y
+
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_wget=y
+        EOF
+
+        make defconfig
+
+        # 强制关闭 ruby（避免 feeds/packages/lang/ruby 炸）
+        echo "CONFIG_PACKAGE_ruby=n" >> .config
+        make defconfig
+
+    - name: Download sources
+      working-directory: openwrt
+      run: |
+        make download -j1
+        find dl -size -1024c -delete
+        df -h
+
+    - name: Compile firmware
+      working-directory: openwrt
+      run: |
+        make -j1 V=s
+
+    # tag 触发 → 自动创建 Release 并上传固件
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
       with:
-        retain_days: 0
-        keep_minimum_runs: 2
+        name: OpenWrt x86_64 J4125 - ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        body: |
+          Automated build from tag ${{ github.ref_name }}
+
+          Base: Lean LEDE
+          Target: x86_64 (J4125)
+          Features:
+          - OpenClash (Meta core)
+          - Docker / Dockerman
+          - Argon Theme
+          - udpxy
+        files: |
+          openwrt/bin/targets/x86/64/*.img.gz
+
+    # 手动触发 → 仅上传 Artifact
+    - name: Upload Artifact (Manual Trigger)
+      if: github.event_name == 'workflow_dispatch'
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenWrt-x86_64-J4125
+        path: openwrt/bin/targets/x86/64/*.img.gz
