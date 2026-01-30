@@ -36,17 +36,17 @@ jobs:
       working-directory: openwrt
       run: |
         # OpenClash
-        git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
+        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
         
         # Argon 主题
-        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
         
         # Dockerman
-        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
-        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
+        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
         
         # AdGuardHome（jerrykuku 版，无 ruby 依赖）
-        git clone --depth=1 https://github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
+        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
         
         # 移除 Werror
         sed -i 's/-Werror//g' include/package.mk
