@@ -35,19 +35,11 @@ jobs:
     - name: Prepare source
       working-directory: openwrt
       run: |
-        # OpenClash
-        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
-        
-        # Argon 主题
-        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
-        
-        # Dockerman
-        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
-        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-        
-        # AdGuardHome（jerrykuku 版，无 ruby 依赖）
-        https://x-access-token:${{ secrets.GITHUB_TOKEN }}@git clone --depth=1 https://github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
-        
+       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/vernesong/OpenClash package/luci-app-openclash
+       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-lib-docker package/luci-lib-docker
+       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
         # 移除 Werror
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
