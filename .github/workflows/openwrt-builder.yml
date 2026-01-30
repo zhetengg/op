@@ -35,12 +35,11 @@ jobs:
     - name: Prepare source
       working-directory: openwrt
       run: |
-       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/vernesong/OpenClash package/luci-app-openclash
-       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
-       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-lib-docker package/luci-lib-docker
-       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-       git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
-        # 移除 Werror
+        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/vernesong/OpenClash package/luci-app-openclash
+        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-theme-argon package/luci-theme-argo
+        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-lib-docker package/luci-lib-docker
+        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+        git clone --depth=1 https://github.com/kiddin9/luci-app-adguardhome package/luci-app-adguardhome
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
 
