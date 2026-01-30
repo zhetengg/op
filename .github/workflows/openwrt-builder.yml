@@ -1,6 +1,10 @@
-name: OpenWrt x86_64 J4125 (Minimal)
+name: OpenWrt x86_64 J4125 (Full Version - With AdGuardHome)
+
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # 手动触发
+  push:
+    tags:
+      - '*'            # 任意 tag 触发自动构建 + Release
 
 jobs:
   build:
@@ -8,11 +12,15 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0   # 需要完整历史来生成 Release notes
 
     - name: Free disk space
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+        sudo rm -rf /usr/share/swift /usr/share/rust /usr/local/.ghcup /opt/* || true
         sudo docker image prune -af || true
+        sudo apt clean
         df -h
 
     - name: Install deps
@@ -27,12 +35,19 @@ jobs:
     - name: Prepare source
       working-directory: openwrt
       run: |
-        # 只保留必须编译的第三方（OpenClash、Argon、Dockerman）
+        # OpenClash
         git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
+        
+        # Argon 主题
         git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+        
+        # Dockerman
         git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
         git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-
+        
+        # AdGuardHome（jerrykuku 版，无 ruby 依赖）
+        git clone --depth=1 https://github.com/jerrykuku/luci-app-adguardhome package/luci-app-adguardhome
+        
         # 移除 Werror
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
@@ -51,23 +66,19 @@ jobs:
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
         CONFIG_PACKAGE_luci-app-openclash=y
+        CONFIG_PACKAGE_openclash=y
+        CONFIG_OPENCLASH_CORE_META=y
 
-        # Docker 全家桶（必须编译进，依赖复杂）
+        # Docker 全家桶 + 修复依赖
         CONFIG_PACKAGE_docker=y
         CONFIG_PACKAGE_docker-ce=y
-        CONFIG_PACKAGE_dockerman=y
+        CONFIG_PACKAGE_dockerd=y
         CONFIG_PACKAGE_containerd=y
         CONFIG_PACKAGE_runc=y
+        CONFIG_PACKAGE_luci-app-dockerman=y
         CONFIG_PACKAGE_luci-lib-docker=y
-        CONFIG_PACKAGE_libpcre2=y
-
-        # 网络共享（Lean 内置，直接启用）
-        CONFIG_PACKAGE_luci-app-samba4=y
-        CONFIG_PACKAGE_samba4-server=y
-        CONFIG_PACKAGE_adguardhome=y
-
-        # udpxy 服务端（Lean 内置，直接启用；luci-app 后期安装）
-        CONFIG_PACKAGE_udpxy=y
+        
+        # Docker kmod 依赖
         CONFIG_PACKAGE_kmod-nft-core=y
         CONFIG_PACKAGE_kmod-nft-fib=y
         CONFIG_PACKAGE_kmod-nft-nat=y
@@ -79,26 +90,52 @@ jobs:
         CONFIG_PACKAGE_kmod-nf-conntrack=y
         CONFIG_PACKAGE_kmod-nft-compat=y
 
-        # 常用最小工具
+        # udpxy
+        CONFIG_PACKAGE_udpxy=y
+        
+        # AdGuardHome
+        CONFIG_PACKAGE_adguardhome=y
+        CONFIG_PACKAGE_luci-app-adguardhome=y
+
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
         EOF
 
         make defconfig
 
-    - name: Download packages
+        echo "CONFIG_PACKAGE_ruby=n" >> .config
+        make defconfig
+
+    - name: Download & Clean
       working-directory: openwrt
       run: |
         make download -j1
         find dl -size -1024c -delete
+        df -h
 
     - name: Compile
       working-directory: openwrt
       run: |
         make -j1 V=s
 
-    - name: Upload firmware
+    # 自动创建 Release 并上传固件（仅 tag 触发时执行）
+    - name: Create Release & Upload Firmware
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        FIRMWARE_PATH="openwrt/bin/targets/x86/64/*.img.gz"
+        
+        gh release create "$TAG_NAME" $FIRMWARE_PATH \
+          --title "OpenWrt x86_64 J4125 - $TAG_NAME" \
+          --notes "Automated build from tag $TAG_NAME (Lean LEDE + OpenClash Meta + Dockerman + AdGuardHome + Argon)" \
+          --draft=false --prerelease=false
+
+    # 手动触发时仍上传 Artifact（方便下载）
+    - name: Upload Artifact (Manual Trigger Only)
+      if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt-x86_64-Minimal
+        name: OpenWrt-x86_64-Full
         path: openwrt/bin/targets/x86/64/*.img.gz
