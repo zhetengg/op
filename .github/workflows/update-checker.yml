@@ -77,6 +77,16 @@ jobs:
         CONFIG_PACKAGE_dockerman=y
 
         CONFIG_PACKAGE_udpxy=y
+        CONFIG_PACKAGE_kmod-nft-core=y
+        CONFIG_PACKAGE_kmod-nft-fib=y
+        CONFIG_PACKAGE_kmod-nft-nat=y
+        CONFIG_PACKAGE_kmod-nft-offload=y
+        CONFIG_PACKAGE_kmod-ipt-physdev=y
+        CONFIG_PACKAGE_kmod-nf-ipvs=y
+        CONFIG_PACKAGE_kmod-veth=y
+        CONFIG_PACKAGE_kmod-nf-nat=y
+        CONFIG_PACKAGE_kmod-nf-conntrack=y
+        CONFIG_PACKAGE_kmod-nft-compat=y
 
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
