@@ -1,4 +1,4 @@
-name: OpenWrt x86_64 J4125 (Full Version - With AdGuardHome & PassWall2)
+name: OpenWrt x86_64 J4125 (Full Version - With AdGuardHome & PassWall
 
 on:
   workflow_dispatch:   # 手动触发
