@@ -1,23 +1,19 @@
-name: OpenWrt x86_64 J4125 (Ultimate Final - Auto Release)
-
-permissions:
-  contents: write
+name: OpenWrt x86_64 J4125 (Full Version - With AdGuardHome & PassWall2)
 
 on:
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:   # 手动触发
   push:
     tags:
-      - 'v*'                # 只有 v 开头的 tag 才会发 Release
+      - '*'            # 任意 tag 触发自动构建 + Release
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        fetch-depth: 0   # 需要完整历史来生成 Release notes
 
     - name: Free disk space
       run: |
@@ -27,27 +23,31 @@ jobs:
         sudo apt clean
         df -h
 
-    - name: Install build dependencies
+    - name: Install deps
       run: |
         sudo apt update
-        sudo apt install -y \
-          build-essential clang flex gawk gcc-multilib gettext git \
-          libncurses5-dev libssl-dev python3-distutils python3-setuptools \
-          rsync unzip wget curl
+        sudo apt install -y build-essential clang flex gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools rsync unzip wget curl
 
     - name: Clone OpenWrt (Lean LEDE)
       run: |
         git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
-    - name: Prepare extra packages
+    - name: Prepare source
       working-directory: openwrt
       run: |
-        git clone --depth=1 https://github.com/vernesong/OpenClash package/luci-app-openclash
+        # PassWall2 主包
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/luci-app-passwall2
+        
+        # PassWall2 依赖包（强烈推荐，防止 core/协议缺失）
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall_packages
+        
+        # 其他你原有的包
         git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
         git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
         git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-
-        # 防止 -Werror 导致莫名其妙炸编译
+        git clone --depth=1 https://github.com/kiddin9/luci-app-adguardhome package/luci-app-adguardhome
+        
+        # 去除编译警告（常见修复）
         sed -i 's/-Werror//g' include/package.mk
         sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
 
@@ -64,20 +64,23 @@ jobs:
 
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
+        
+        # PassWall2 相关（核心 + 常见依赖）
+        CONFIG_PACKAGE_luci-app-passwall2=y
+        CONFIG_PACKAGE_passwall2=y                  # 如果有独立包名，视情况加
+        # 可选：选择核心（xray / sing-box 等，通常默认拉取）
+        # CONFIG_PACKAGE_xray-core=y
+        # CONFIG_PACKAGE_sing-box=y
 
-        CONFIG_PACKAGE_luci-app-openclash=y
-        CONFIG_PACKAGE_openclash=y
-        CONFIG_OPENCLASH_CORE_META=y
-        CONFIG_PACKAGE_adguardhome=y
-
+        # Docker 全家桶 + 修复依赖（保持原样）
         CONFIG_PACKAGE_docker=y
         CONFIG_PACKAGE_docker-ce=y
+        CONFIG_PACKAGE_dockerd=y
         CONFIG_PACKAGE_containerd=y
         CONFIG_PACKAGE_runc=y
+        CONFIG_PACKAGE_luci-app-dockerman=y
         CONFIG_PACKAGE_luci-lib-docker=y
-        CONFIG_PACKAGE_dockerman=y
-
-        CONFIG_PACKAGE_udpxy=y
+        
         CONFIG_PACKAGE_kmod-nft-core=y
         CONFIG_PACKAGE_kmod-nft-fib=y
         CONFIG_PACKAGE_kmod-nft-nat=y
@@ -89,52 +92,52 @@ jobs:
         CONFIG_PACKAGE_kmod-nf-conntrack=y
         CONFIG_PACKAGE_kmod-nft-compat=y
 
+        # udpxy
+        CONFIG_PACKAGE_udpxy=y
+        
+        # AdGuardHome（保持原样）
+        CONFIG_PACKAGE_adguardhome=y
+        CONFIG_PACKAGE_luci-app-adguardhome=y
+
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
         EOF
 
         make defconfig
 
-        # 强制关闭 ruby（避免 feeds/packages/lang/ruby 炸）
+        # 额外清理（可选，避免 ruby 等冲突）
         echo "CONFIG_PACKAGE_ruby=n" >> .config
         make defconfig
 
-    - name: Download sources
+    - name: Download & Clean
       working-directory: openwrt
       run: |
         make download -j1
         find dl -size -1024c -delete
         df -h
 
-    - name: Compile firmware
+    - name: Compile
       working-directory: openwrt
       run: |
-        make -j1 V=s
+        make -j1 V=s   # 第一次建议单线程，成功后再改多线程
 
-    # tag 触发 → 自动创建 Release 并上传固件
-    - name: Create GitHub Release
+    # 自动 Release（tag 触发）
+    - name: Create Release & Upload Firmware
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        name: OpenWrt x86_64 J4125 - ${{ github.ref_name }}
-        tag_name: ${{ github.ref_name }}
-        body: |
-          Automated build from tag ${{ github.ref_name }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        FIRMWARE_PATH="openwrt/bin/targets/x86/64/*.img.gz"
+        
+        gh release create "$TAG_NAME" $FIRMWARE_PATH \
+          --title "OpenWrt x86_64 J4125 - $TAG_NAME (PassWall2 + AdGuardHome)" \
+          --notes "Automated build from tag $TAG_NAME (Lean LEDE + PassWall2 + Dockerman + AdGuardHome + Argon)" \
+          --draft=false --prerelease=false
 
-          Base: Lean LEDE
-          Target: x86_64 (J4125)
-          Features:
-          - OpenClash (Meta core)
-          - Docker / Dockerman
-          - Argon Theme
-          - udpxy
-        files: |
-          openwrt/bin/targets/x86/64/*.img.gz
-
-    # 手动触发 → 仅上传 Artifact
-    - name: Upload Artifact (Manual Trigger)
+    - name: Upload Artifact (Manual Trigger Only)
       if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt-x86_64-J4125
+        name: OpenWrt-x86_64-Full-PassWall2
         path: openwrt/bin/targets/x86/64/*.img.gz
