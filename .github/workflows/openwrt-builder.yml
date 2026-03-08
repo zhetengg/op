@@ -1,10 +1,10 @@
-name: OpenWrt x86_64 J4125 (Full Version - With AdGuardHome)
+name: OpenWrt_J4125_Full_Optimize
 
 on:
-  workflow_dispatch:   # 手动触发
+  workflow_dispatch:
   push:
     tags:
-      - '*'            # 任意 tag 触发自动构建 + Release
+      - 'v*'
 
 jobs:
   build:
@@ -12,8 +12,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0   # 需要完整历史来生成 Release notes
 
     - name: Free disk space
       run: |
@@ -28,20 +26,18 @@ jobs:
         sudo apt update
         sudo apt install -y build-essential clang flex gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools rsync unzip wget curl
 
-    - name: Clone OpenWrt
+    - name: Clone OpenWrt (Lean LEDE)
       run: |
-        git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
+        git clone --depth=1 https://github.com openwrt
 
     - name: Prepare source
       working-directory: openwrt
       run: |
-        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/vernesong/OpenClash package/luci-app-openclash
-        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/jerrykuku/luci-theme-argon package/luci-theme-argo
-        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-lib-docker package/luci-lib-docker
-        git clone --depth=1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
-        git clone --depth=1 https://github.com/kiddin9/luci-app-adguardhome package/luci-app-adguardhome
-        sed -i 's/-Werror//g' include/package.mk
-        sed -i 's/-Werror//g' package/libs/libselinux/Makefile || true
+        # 插件源整合
+        git clone --depth=1 https://github.com package/luci-app-passwall2
+        git clone --depth=1 https://github.com package/passwall_packages
+        git clone --depth=1 https://github.com package/luci-theme-argon
+        git clone --depth=1 https://github.com package/luci-app-dockerman
 
     - name: Update feeds & Generate config
       working-directory: openwrt
@@ -50,83 +46,79 @@ jobs:
         ./scripts/feeds install -a
 
         cat > .config << 'EOF'
+        # 硬件架构与 J4125 性能优化
         CONFIG_TARGET_x86=y
         CONFIG_TARGET_x86_64=y
         CONFIG_TARGET_x86_64_Generic=y
+        CONFIG_TARGET_OPTIMIZATION="-O2 -pipe -march=x86-64-v2"
+        CONFIG_X86_64_AESNI=y
 
+        # 分区大小设置 (256MB Boot + 20GB Root)
+        CONFIG_TARGET_KERNEL_PARTSIZE=256
+        CONFIG_TARGET_ROOTFS_PARTSIZE=20480
+        
+        # 固件格式 (生成 EFI 引导的 img.gz)
+        CONFIG_TARGET_IMAGES_GZ=y
+        CONFIG_GRUB_EFI_IMAGES=y
+
+        # 核心插件: PassWall2 (集成常用内核)
+        CONFIG_PACKAGE_luci-app-passwall2=y
+        CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Xray=y
+        CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox=y
+        
+        # 核心插件: Docker (8G 内存首选)
+        CONFIG_PACKAGE_luci-app-dockerman=y
+        CONFIG_PACKAGE_docker-ce=y
+
+        # 界面与工具
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
-        CONFIG_PACKAGE_luci-app-openclash=y
-        CONFIG_PACKAGE_openclash=y
-        CONFIG_OPENCLASH_CORE_META=y
-
-        # Docker 全家桶 + 修复依赖
-        CONFIG_PACKAGE_docker=y
-        CONFIG_PACKAGE_docker-ce=y
-        CONFIG_PACKAGE_dockerd=y
-        CONFIG_PACKAGE_containerd=y
-        CONFIG_PACKAGE_runc=y
-        CONFIG_PACKAGE_luci-app-dockerman=y
-        CONFIG_PACKAGE_luci-lib-docker=y
-        
-        # Docker kmod 依赖
-        CONFIG_PACKAGE_kmod-nft-core=y
-        CONFIG_PACKAGE_kmod-nft-fib=y
-        CONFIG_PACKAGE_kmod-nft-nat=y
-        CONFIG_PACKAGE_kmod-nft-offload=y
-        CONFIG_PACKAGE_kmod-ipt-physdev=y
-        CONFIG_PACKAGE_kmod-nf-ipvs=y
-        CONFIG_PACKAGE_kmod-veth=y
-        CONFIG_PACKAGE_kmod-nf-nat=y
-        CONFIG_PACKAGE_kmod-nf-conntrack=y
-        CONFIG_PACKAGE_kmod-nft-compat=y
-
-        # udpxy
-        CONFIG_PACKAGE_udpxy=y
-        
-        # AdGuardHome
-        CONFIG_PACKAGE_adguardhome=y
-        CONFIG_PACKAGE_luci-app-adguardhome=y
-
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
+        CONFIG_PACKAGE_htop=y
+        CONFIG_PACKAGE_nano=y
         EOF
 
+        # 强制修正分区参数 (二次确认)
+        sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=256/' .config
+        sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=20480/' .config
+
+        # 修改默认 IP 为 192.168.5.1
+        sed -i '/lan)/,/;;/ s/192\.168\.1\.1/192.168.5.1/g' package/base-files/files/bin/config_generate
+
         make defconfig
 
-        echo "CONFIG_PACKAGE_ruby=n" >> .config
-        make defconfig
-
-    - name: Download & Clean
+    - name: Download & Compile
       working-directory: openwrt
       run: |
-        make download -j1
+        make download -j8
         find dl -size -1024c -delete
-        df -h
+        # 全速编译，报错自动转单线程
+        make -j$(nproc) || make -j1 V=s
 
-    - name: Compile
+    - name: Organize files
       working-directory: openwrt
       run: |
-        make -j1 V=s
+        mkdir -p bin/targets/x86/64/firmware
+        mv bin/targets/x86/64/*combined-efi.img.gz bin/targets/x86/64/firmware/ 2>/dev/null || true
+        echo "STRRP_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
-    # 自动创建 Release 并上传固件（仅 tag 触发时执行）
-    - name: Create Release & Upload Firmware
-      if: startsWith(github.ref, 'refs/tags/')
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        TAG_NAME=${GITHUB_REF#refs/tags/}
-        FIRMWARE_PATH="openwrt/bin/targets/x86/64/*.img.gz"
-        
-        gh release create "$TAG_NAME" $FIRMWARE_PATH \
-          --title "OpenWrt x86_64 J4125 - $TAG_NAME" \
-          --notes "Automated build from tag $TAG_NAME (Lean LEDE + OpenClash Meta + Dockerman + AdGuardHome + Argon)" \
-          --draft=false --prerelease=false
-
-    # 手动触发时仍上传 Artifact（方便下载）
-    - name: Upload Artifact (Manual Trigger Only)
+    - name: Upload Artifact
       if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt-x86_64-Full
-        path: openwrt/bin/targets/x86/64/*.img.gz
+        name: OpenWrt_J4125_EFI_${{ env.STRRP_DATE }}
+        path: openwrt/bin/targets/x86/64/firmware/*
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: openwrt/bin/targets/x86/64/firmware/*
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+          ### J4125 专用 OpenWrt 优化版
+          - **默认 IP**: 192.168.5.1
+          - **分区**: 256MB Boot / 20GB Root (适合 Docker)
+          - **优化**: 开启 AES-NI, x86-64-v2 指令集
+          - **组件**: PassWall2, Docker, Argon Theme
