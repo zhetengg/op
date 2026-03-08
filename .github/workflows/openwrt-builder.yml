@@ -28,16 +28,17 @@ jobs:
 
     - name: Clone OpenWrt (Lean LEDE)
       run: |
-        git clone --depth=1 https://github.com openwrt
+        git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
     - name: Prepare source
       working-directory: openwrt
       run: |
         # 插件源整合
-        git clone --depth=1 https://github.com package/luci-app-passwall2
-        git clone --depth=1 https://github.com package/passwall_packages
-        git clone --depth=1 https://github.com package/luci-theme-argon
-        git clone --depth=1 https://github.com package/luci-app-dockerman
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/luci-app-passwall2
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall_packages
+        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
+        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
+        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
 
     - name: Update feeds & Generate config
       working-directory: openwrt
