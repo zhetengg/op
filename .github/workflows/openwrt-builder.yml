@@ -1,5 +1,4 @@
-name: OpenWrt_J4125_Full_Optimize
-
+name: OpenWrt_J4125_PassWall2_Optimize
 on:
   workflow_dispatch:
   push:
@@ -13,89 +12,76 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Free disk space
+    - name: Free disk space (critical for 14GB limit)
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
         sudo rm -rf /usr/share/swift /usr/share/rust /usr/local/.ghcup /opt/* || true
         sudo docker image prune -af || true
         sudo apt clean
+        sudo rm -rf /usr/local/share/boost /usr/share/doc /usr/share/man || true
         df -h
 
     - name: Install deps
       run: |
         sudo apt update
-        sudo apt install -y build-essential clang flex gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools rsync unzip wget curl
+        sudo apt install -y build-essential clang flex gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools rsync unzip wget curl bc time
 
-    - name: Clone OpenWrt (Lean LEDE)
+    - name: Clone OpenWrt (coolsnowwolf/lede)
       run: |
         git clone --depth=1 https://github.com/coolsnowwolf/lede openwrt
 
-    - name: Prepare source
+    - name: Prepare source (manual clone plugins)
       working-directory: openwrt
       run: |
-        # 插件源整合
-        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/luci-app-passwall2
-        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall_packages
-        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon
-        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker
-        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall2 package/luci-app-passwall2 || true
+        git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages package/passwall_packages || true
+        git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon package/luci-theme-argon || true
+        git clone --depth=1 https://github.com/lisaac/luci-lib-docker package/luci-lib-docker || true
+        git clone --depth=1 https://github.com/lisaac/luci-app-dockerman package/luci-app-dockerman || true
 
     - name: Update feeds & Generate config
       working-directory: openwrt
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-
         cat > .config << 'EOF'
-        # 硬件架构与 J4125 性能优化
         CONFIG_TARGET_x86=y
         CONFIG_TARGET_x86_64=y
         CONFIG_TARGET_x86_64_Generic=y
         CONFIG_TARGET_OPTIMIZATION="-O2 -pipe -march=x86-64-v2"
         CONFIG_X86_64_AESNI=y
-
-        # 分区大小设置 (256MB Boot + 20GB Root)
         CONFIG_TARGET_KERNEL_PARTSIZE=256
         CONFIG_TARGET_ROOTFS_PARTSIZE=20480
-        
-        # 固件格式 (生成 EFI 引导的 img.gz)
         CONFIG_TARGET_IMAGES_GZ=y
         CONFIG_GRUB_EFI_IMAGES=y
-
-        # 核心插件: PassWall2 (集成常用内核)
         CONFIG_PACKAGE_luci-app-passwall2=y
-        CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_Xray=y
-        CONFIG_PACKAGE_luci-app-passwall2_INCLUDE_SingBox=y
-        
-        # 核心插件: Docker (8G 内存首选)
-        CONFIG_PACKAGE_luci-app-dockerman=y
-        CONFIG_PACKAGE_docker-ce=y
-
-        # 界面与工具
-        CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_PACKAGE_luci-app-dockerman=y
+        CONFIG_PACKAGE_luci-lib-docker=y
+        CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget=y
         CONFIG_PACKAGE_htop=y
         CONFIG_PACKAGE_nano=y
         EOF
-
-        # 强制修正分区参数 (二次确认)
         sed -i 's/CONFIG_TARGET_KERNEL_PARTSIZE=.*/CONFIG_TARGET_KERNEL_PARTSIZE=256/' .config
         sed -i 's/CONFIG_TARGET_ROOTFS_PARTSIZE=.*/CONFIG_TARGET_ROOTFS_PARTSIZE=20480/' .config
-
-        # 修改默认 IP 为 192.168.5.1
         sed -i '/lan)/,/;;/ s/192\.168\.1\.1/192.168.5.1/g' package/base-files/files/bin/config_generate
-
         make defconfig
+
+    - name: Clean before compile (aggressive to avoid 14GB limit)
+      working-directory: openwrt
+      run: |
+        rm -rf tmp/ staging_dir/target-*/root-x86/* build_dir/target-*/linux-x86_64/tmp/* build_dir/target-*/linux-x86_64/image/* 2>/dev/null || true
+        find dl -size -1024c -delete || true
+        rm -rf dl/*.crate dl/rust* dl/go* 2>/dev/null || true
+        df -h
 
     - name: Download & Compile
       working-directory: openwrt
       run: |
-        make download -j8
-        find dl -size -1024c -delete
-        # 全速编译，报错自动转单线程
-        make -j$(nproc) || make -j1 V=s
+        make download -j4
+        make -j4 V=s || make -j1 V=s
 
     - name: Organize files
       working-directory: openwrt
@@ -108,7 +94,7 @@ jobs:
       if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt_J4125_EFI_${{ env.STRRP_DATE }}
+        name: OpenWrt_J4125_PassWall2_${{ env.STRRP_DATE }}
         path: openwrt/bin/targets/x86/64/firmware/*
 
     - name: Create Release
@@ -119,7 +105,7 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         body: |
           ### J4125 专用 OpenWrt 优化版
-          - **默认 IP**: 192.168.5.1
-          - **分区**: 256MB Boot / 20GB Root (适合 Docker)
-          - **优化**: 开启 AES-NI, x86-64-v2 指令集
-          - **组件**: PassWall2, Docker, Argon Theme
+          - 默认 IP: 192.168.5.1
+          - 分区: 256MB Boot / 20GB Root (适合 Docker)
+          - 优化: AES-NI, x86-64-v2
+          - 组件: PassWall2, Argon Theme, Dockerman
